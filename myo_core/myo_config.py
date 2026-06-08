@@ -1,11 +1,16 @@
 from dataclasses import dataclass, field
 from typing import Any
-from omegaconf import MISSING
+from omegaconf import MISSING, OmegaConf
 from hydra.core.config_store import ConfigStore
 from mjlab.rl import RslRlPpoAlgorithmCfg
 
 from .task import TaskConfig
 from .vision import VisionConfig
+
+
+OmegaConf.register_new_resolver(
+    "myo_suffix_append", lambda x: "" if x is None else "-" + str(x)
+)
 
 
 @dataclass
@@ -50,9 +55,11 @@ class RlConfig(RslRlPpoAlgorithmCfg):
 
 @dataclass
 class WanDbConfig:
+    enabled: bool = True
     project: str = "mjlab"
-    name: str = "myouser"
+    name: str = "${hydra:runtime.choices.task}-${now:%Y%m%d}-${now:%H%M%S}${myo_suffix_append:${wandb.suffix}}"
     tags: tuple[str, ...] = ()
+    suffix: str | None = None
 
 
 @dataclass

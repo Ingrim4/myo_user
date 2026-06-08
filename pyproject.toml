@@ -15,14 +15,11 @@ classifiers = [
 ]
 dependencies = [
     "torch",
-    "torchvision",
-    "ml_collections",
     "omegaconf",
     "hydra-core",
     "mujoco",
     "mujoco-warp",
-    "mjlab>=1.3.0",
-    "ultralytics>=8.4.37",
+    "mjlab>=1.4.0"
 ]
 
 [project.scripts]

@@ -19,6 +19,6 @@
           <include file="../../../../simhive/uitb_sim/assets/mobl_arms_index_body.xml"/>
         </body>
 
-        <light name="scene_light" directional="true" castshadow="false" cutoff="4" exponent="20" ambient="1 1 1" diffuse="1 1 1" specular="0 0 0" pos="0.5 0.5 3.0"/>
+        <light name="scene_light" directional="true" castshadow="false" cutoff="4" exponent="20" diffuse="1 1 1" specular="0 0 0" pos="0.5 0.5 3.0"/>
     </worldbody>
 </mujoco>

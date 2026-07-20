@@ -19,7 +19,8 @@ dependencies = [
     "hydra-core",
     "mujoco",
     "mujoco-warp",
-    "mjlab>=1.4.0"
+    "mjlab>=1.4.0",
+    "h5py",
 ]
 
 [project.scripts]

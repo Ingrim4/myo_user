@@ -29,7 +29,7 @@ from .recorder import (
 )
 
 from .reward import (
-  neural_effort,
+  dc_effort,
   jac_effort
 )
 

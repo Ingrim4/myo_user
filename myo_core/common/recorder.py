@@ -1,14 +1,20 @@
 from __future__ import annotations
 
-from pathlib import Path
-
+from datetime import datetime
+import json
 import math
+from pathlib import Path
+import subprocess
+import sys
+
 import h5py
 import numpy as np
 import torch
 
 from mjlab.envs import ManagerBasedRlEnv
 from mjlab.managers import RecorderTermCfg, RecorderTerm
+
+_PATH = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 class H5EvalRecorder(RecorderTerm):
@@ -20,7 +26,8 @@ class H5EvalRecorder(RecorderTerm):
 
       transitions/<name>:
           One row per environment step. `source_state_row` points into
-          `states`; `next_state_row` is -1 for terminal transitions.
+          `states`; `next_state_row` points to the post-action state, including
+          for terminal transitions.
 
     Override `_collect_state_tensors()` to record the exact tensors used by
     the attention module rather than a flattened actor observation.
@@ -29,11 +36,40 @@ class H5EvalRecorder(RecorderTerm):
     def __init__(self, cfg: RecorderTermCfg, env: ManagerBasedRlEnv):
         super().__init__(cfg, env)
 
-        path = Path(cfg.params["path"])
+        path = Path(f"record/{_PATH}.h5")
         path.parent.mkdir(parents=True, exist_ok=True)
 
         self._file = h5py.File(path, "w")
         self._file.attrs["format"] = "mjlab_eval_hdf5_v1"
+        self._file.attrs["created_at"] = datetime.now().astimezone().isoformat()
+        self._file.attrs["num_envs"] = int(env.num_envs)
+
+        # Keep timing information next to episode_step so analyses do not have
+        # to reconstruct seconds from the launch configuration.
+        step_dt = getattr(env, "step_dt", None)
+        if step_dt is not None:
+            self._file.attrs["step_dt_seconds"] = float(step_dt)
+
+        max_episode_length = getattr(env, "max_episode_length", None)
+        if max_episode_length is not None:
+            self._file.attrs["max_episode_length_steps"] = int(max_episode_length)
+
+        # Components may attach stable run provenance without coupling this
+        # generic recorder to Hydra, W&B, or a particular launcher.
+        metadata = cfg.params.get("metadata", {})
+        if not isinstance(metadata, dict):
+            raise TypeError("Recorder metadata must be a dictionary.")
+        metadata_group = self._file.require_group("metadata")
+        metadata_group.attrs["launcher_argv_json"] = json.dumps(sys.argv)
+
+        env_cfg = getattr(env, "cfg", None)
+        evaluation_seed = getattr(env_cfg, "seed", None)
+        if evaluation_seed is not None:
+            metadata_group.attrs["environment_seed"] = int(evaluation_seed)
+
+        for name, value in metadata.items():
+            if value is not None:
+                metadata_group.attrs[name] = value
 
         self._datasets: dict[tuple[str, str], h5py.Dataset] = {}
         self._row_counts = {
@@ -118,8 +154,10 @@ class H5EvalRecorder(RecorderTerm):
                 )
 
         for reward_index, reward_name in enumerate(reward_manager.active_terms):
-            reward_tensor = reward_manager._step_reward[env_ids, reward_index]
-            state[f"reward/{reward_name}"] = reward_tensor
+            weight = reward_manager._term_cfgs[reward_index].weight
+            if weight != 0:
+                reward_tensor = reward_manager._step_reward[env_ids, reward_index]
+                state[f"reward/{reward_name}"] = reward_tensor
 
         for termination_name in termination_manager.active_terms:
             termination_tensor = termination_manager.get_term(termination_name)
@@ -218,6 +256,7 @@ class H5EvalRecorder(RecorderTerm):
         *,
         episode_step: torch.Tensor,
         is_initial: bool,
+        is_terminal: bool = False,
     ) -> torch.Tensor:
         state = self._collect_state_tensors(env_ids)
         num_rows = env_ids.numel()
@@ -229,6 +268,12 @@ class H5EvalRecorder(RecorderTerm):
             is_initial=torch.full(
                 (num_rows,),
                 is_initial,
+                device=env_ids.device,
+                dtype=torch.bool,
+            ),
+            is_terminal=torch.full(
+                (num_rows,),
+                is_terminal,
                 device=env_ids.device,
                 dtype=torch.bool,
             ),
@@ -307,7 +352,7 @@ class H5EvalRecorder(RecorderTerm):
         )
 
     def record_pre_reset(self, env_ids: torch.Tensor) -> None:
-        """Write terminal transitions before actions are cleared."""
+        """Write terminal post-action states and transitions before reset."""
         if env_ids.numel() == 0:
             return
 
@@ -319,12 +364,22 @@ class H5EvalRecorder(RecorderTerm):
                 "record_post_reset() must run before the first step."
             )
 
+        terminal_steps = self._episode_step[env_ids] + 1
+        terminal_rows = self._append_state(
+            env_ids,
+            episode_step=terminal_steps,
+            is_initial=False,
+            is_terminal=True,
+        )
+
         self._append_transition(
             env_ids,
             source_state_rows=source_rows,
-            next_state_rows=torch.full_like(source_rows, -1),
+            next_state_rows=terminal_rows,
             done=True,
         )
+
+        self._episode_step[env_ids] = terminal_steps
 
     def record_post_step(self) -> None:
         """Write non-terminal next states and their preceding transitions."""

@@ -47,9 +47,11 @@ class ShapeTargetConfig(TargetConfig):
 class PointingTargetConfig(ShapeTargetConfig):
     dwell_duration: float = 0.25
 
+
 @dataclass
 class TrackingTargetConfig(ShapeTargetConfig):
     dwell_duration: float | None = None
+
 
 @dataclass
 class ButtonTargetConfig(TargetConfig):
@@ -82,8 +84,8 @@ class ReachConfig:
 class RewardConfig:
     weights: dict[str, float] = field(default_factory=lambda: {
         "distance": 1,
-        "phase_bonus": 10,
-        "done": 10
+        "trial_bonus": 8,
+        "done": 8
     })
     distance_exponential: bool = False
     distance_metric: float = 10.0
@@ -93,6 +95,7 @@ class RewardConfig:
 class SequenceConfig:
     max_trials: int | None = None
     order: TargetOrder = TargetOrder.FIXED
+
 
 @dataclass
 class ChoiceReactionConfig:
@@ -104,6 +107,7 @@ class ChoiceReactionConfig:
 
     position: list[float] = field(default_factory=lambda: [0.0, 0.0, -0.75])
     size: list[float] = field(default_factory=lambda: [0.1, 0.1, 0.001])
+
 
 @dataclass
 class UniversalTaskConfig(TaskConfig):
@@ -123,13 +127,16 @@ class UniversalTaskConfig(TaskConfig):
         'qvel',
         'qacc',
         'act',
-        'ee_pos'
+        'ee_pos',
+        'trial_progress',
     ])
     task_state_keys: list[str] = field(default_factory=lambda: [
         'target_pos',
+        'dwell_fraction',
+    ])
+    task_query_keys: list[str] = field(default_factory=lambda: [
+        'target_color',
         'target_size',
-        'phase_progress',
-        'dwell_fraction'
     ])
 
     @property
